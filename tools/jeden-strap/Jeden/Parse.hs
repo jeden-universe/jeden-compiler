@@ -60,13 +60,13 @@ parseJeden = parse jmodule
 
 -- Productions
 
-type Prod r a = Parser r () a
+type Prod a = Parser () a
 
-jmodule :: Prod r Module
+jmodule :: Prod Module
 jmodule = proc () -> do
     returnA -< Module [] []
 
-decl :: Prod r Decl
+decl :: Prod Decl
 decl = proc () -> do
     ctx <- option [] context -< ()
     lex_ $ L.string ":-" -< ()
@@ -75,15 +75,15 @@ decl = proc () -> do
     typ <- typeexpr -< ()
     returnA -< Decl ctx trm typ
 
-deftype :: Prod r [Constr]
+deftype :: Prod [Constr]
 deftype =
     many typclause
 
-defterm :: Prod r [Clause]
+defterm :: Prod [Clause]
 defterm =
     many trmclause
 
-typclause :: Prod r Constr
+typclause :: Prod Constr
 typclause = proc () -> do
     src <- option TypUnit (try $ proc () -> do
         src <- typeexpr -< ()
@@ -95,7 +95,7 @@ typclause = proc () -> do
     tgt <- typeexpr -< ()
     returnA -< Constr src name tgt
 
-trmclause :: Prod r Clause
+trmclause :: Prod Clause
 trmclause = proc () -> do
     src <- option [] (try $ proc () -> do
         src <- some pattern -< ()
@@ -108,7 +108,7 @@ trmclause = proc () -> do
     acts <- many action -< ()
     returnA -< Clause src name tgt acts
 
-action :: Prod r Action
+action :: Prod Action
 action = proc () -> do
     src <- option [] (try $ proc () -> do
         src <- some pattern -< ()
@@ -122,13 +122,13 @@ action = proc () -> do
         ) -< ()
     returnA -< Action src name tgt
 
-context :: Prod r [(Ident,Type)]
+context :: Prod [(Ident,Type)]
 context = proc () -> do
     c <- ctxelem -< ()
     cs <- many $ (lex_ $ L.char ',') >>> ctxelem -< ()
     returnA -< reverse $ c:cs
 
-ctxelem :: Prod r (Ident,Type)
+ctxelem :: Prod (Ident,Type)
 ctxelem = proc () -> do
     v <- ident -< ()
     lex_ $ L.char ':' -< ()
@@ -136,30 +136,30 @@ ctxelem = proc () -> do
     returnA -< (v,t)
 
 
-typeexpr :: Prod r Type
+typeexpr :: Prod Type
 typeexpr =
     typeprod
 
-typeprod :: Prod r Type
+typeprod :: Prod Type
 typeprod = proc () -> do
     t <- typefun -< ()
     ts <- many $ (lex_ $ L.char '*') >>> typefun -< ()
     let typs = t:ts
     returnA -< foldr TypSigma (last typs) (init typs)
 
-typefun :: Prod r Type
+typefun :: Prod Type
 typefun = proc () -> do
     t <- typeapp -< ()
     ts <- many $ (lex_ $ L.string "->") >>> typeapp -< ()
     let typs = t:ts
     returnA -< foldr TypPi (last typs) (init typs)
 
-typeapp :: Prod r Type
+typeapp :: Prod Type
 typeapp = proc () -> do
     t:ts <- some typeatom -< ()
     returnA -< foldl TypApp t ts
 
-typeatom :: Prod r Type
+typeatom :: Prod Type
 typeatom = proc () ->
         ( do
         lex $ L.string "Type" >>> L.notFollowedBy L.alphaNum -< ()
@@ -173,7 +173,7 @@ typeatom = proc () ->
         parens typeexpr -< ()
         )
 
-pattern :: Prod r Pat
+pattern :: Prod Pat
 pattern = proc () ->
         ( do
         atom <- ident -< ()
@@ -187,7 +187,7 @@ pattern = proc () ->
         returnA -< PatApp ctr args
         )
 
-parens :: Prod r a -> Prod r a
+parens :: Prod a -> Prod a
 parens p =
     between
         (lex $ L.char '(')
@@ -196,29 +196,29 @@ parens p =
 
 -- Terminals: tokens captured as ByteString
 
-type Terminal r = Parser r () ByteString
+type Terminal = Parser () ByteString
 
-ident :: Terminal r
+ident :: Terminal
 ident =
     lex $ some L.alphaNum
 
 -- Seperators: different kinds of white-space
 
-type Separator r = Parser r () ()
+type Separator = Parser () ()
 
-manyws :: Separator r
+manyws :: Separator
 manyws =
     lex_ $ L.takeWhile (== ' ')
 
-somews :: Separator r
+somews :: Separator
 somews =
     lex_ $ some $ L.char ' '
 
-manyvs :: Separator r
+manyvs :: Separator
 manyvs =
     lex_ $ many $ L.word8 32 <+> L.word8 10
 
-vskip :: Separator r
+vskip :: Separator
 vskip = proc () -> do
     manyws -< ()
     many ((lex_ $ L.word8 10) >>> pause >>> manyws) -< ()

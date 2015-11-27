@@ -1,7 +1,9 @@
 {-# LANGUAGE
     GADTs,
     Arrows,
-    GeneralizedNewtypeDeriving
+    RankNTypes,
+    FlexibleInstances,
+    MultiParamTypeClasses
   #-}
 
 module Util.Parser (
@@ -33,12 +35,10 @@ import Util.TextPos
 import Prelude (($), Eq(..), Num(..), (>=), Show(..), showParen, showString,
     String, const)
 
-newtype Parser r i o = Parser {
-        theParser :: ParserArrow (PResult r) ParseError (StateArrow PState (->)) i o
+newtype Parser i o = Parser {
+        theParser :: forall r. ParserArrow (PResult r) ParseError (StateArrow PState (->)) i o
                   -- ParserPlate * -> StateArrow { (i,PState) -> (PResult r,PState) }
-    } deriving (Category, Arrow, ArrowChoice,
-        ArrowZero, ArrowPlus, ArrowMany, ArrowLoop,
-        ArrowError ParseError, ArrowState PState)
+    }
 
 type Lexer = LexerArrow () ()
 type ParseError = String
@@ -49,7 +49,7 @@ data PResult a where
     PMore   :: (ByteString -> (PResult a, PState))
             -> PResult a
 
-parse :: Parser r () r -> ByteString -> PResult r
+parse :: Parser () r -> ByteString -> PResult r
 parse (Parser p) input =
     fst $ runState
         (runParser p (arr PFail) (arr PDone) (arr PFail) (arr PDone))
@@ -61,7 +61,7 @@ feed input (PMore f) =
     fst $ f input
 feed _ res = res
 
-lex_ :: LexerArrow () e -> Parser r () ()
+lex_ :: LexerArrow () e -> Parser () ()
 lex_ theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $
         let this = \((), PState pos s) -> case lexer theLexer ((),s) of {
@@ -78,7 +78,7 @@ lex_ theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
         in this
 
 -- | Insert the given lexer, capturing whatever it matches.
-lex :: LexerArrow () e -> Parser r () ByteString
+lex :: LexerArrow () e -> Parser () ByteString
 lex theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $
         let this = \((),PState pos s) -> case lexer theLexer ((),s) of {
@@ -102,7 +102,7 @@ lex theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
 -- | Turn a Parser into a look-ahead Parser. A failure occurring after consuming
 --   input is recovered from.
 --   ## TODO: can be implemented on top of ArrowError class
-try :: Parser r i o -> Parser r i o
+try :: Parser i o -> Parser i o
 try p = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $ \(x,s) ->
         runState
@@ -116,14 +116,14 @@ option :: ArrowPlus a => o -> a () o -> a () o
 option x try =
     try <+> (proc () -> returnA -< x)
 
-sepBy :: Parser r () i -> Parser r () e -> Parser r () [i]
+sepBy :: Parser () i -> Parser () e -> Parser () [i]
 sepBy pat sep = proc () -> do
     x  <- pat -< ()
     xs <- many $ try (sep >>> (arr $ const ()) >>> pat) -< ()
     returnA -< x : xs
 
-between :: Parser r () b -> Parser r () e -> Parser r () o
-        -> Parser r () o
+between :: Parser () b -> Parser () e -> Parser () o
+        -> Parser () o
 between begin end inside = proc () -> do
     begin -< ()
     out <- inside -< ()
@@ -133,7 +133,7 @@ between begin end inside = proc () -> do
 -- | Pause parsing if input stream is empty. This is useful when
 --   placed immediately before 'many', preventing the latter from
 --   matching the empty string.
-pause :: Parser r i i
+pause :: Parser i i
 pause = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $
         let this = \(x, PState pos s) ->
@@ -142,7 +142,7 @@ pause = Parser $ ParserArrow $ \noC okS noS okC ->
                     else runState okS (x, PState pos s)
         in this
 
-getPos :: Parser r () TextPos
+getPos :: Parser () TextPos
 getPos = proc () -> do
     PState pos _ <- fetch -< ()
     returnA -< pos
@@ -161,3 +161,28 @@ instance Show a => Show (PResult a) where
         showParen (p >= 10) (showString "PFail " . showsPrec 11 e)
     showsPrec p (PMore _)   =
         showParen (p >= 10) (showString "PMore <...>")
+
+-- Parser instances
+-- connot be newtype-derived by GHC because of the inner Rank2 polymorphism
+
+instance Category Parser where
+    id = Parser id
+    Parser g . Parser f = Parser $ g . f
+
+instance Arrow Parser where
+    arr f = Parser $ arr f
+    first (Parser f) = Parser (first f)
+
+instance ArrowZero Parser where
+    zeroArrow = Parser zeroArrow
+
+instance ArrowPlus Parser where
+    Parser f <+> Parser g = Parser $ f <+> g
+
+instance ArrowMany Parser where
+    many (Parser f) = Parser $ many f
+    some (Parser f) = Parser $ some f
+
+instance ArrowState PState Parser where
+    fetch = Parser fetch
+    store = Parser store
