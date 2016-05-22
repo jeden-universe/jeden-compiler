@@ -53,7 +53,7 @@ parse :: Parser () r -> ByteString -> PResult r
 parse (Parser p) input =
     fst $ runState
         (runParser p (arr PFail) (arr PDone) (arr PFail) (arr PDone))
-        ((), PState mempty input)
+        ((), PState mempty input [])
 
 -- | Feed additional input to a partial result.
 feed :: ByteString -> PResult r -> PResult r
@@ -64,16 +64,18 @@ feed _ res = res
 lex_ :: LexerArrow () e -> Parser () ()
 lex_ theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $
-        let this = \((), PState pos s) -> case lexer theLexer ((),s) of {
+        let this = \((), st) -> case lexer theLexer ((),stream st) of {
             LDone (_,s') ->
-                let len = BS.length s - BS.length s'
+                let len = BS.length (stream st) - BS.length s'
                 in  if len == 0
-                    then runState okS ((), PState pos s')
-                    else runState okC ((), PState (append pos $ BS.take len s) s')
+                    then runState okS ((), st { stream = s'})
+                    else runState okC ((), st {
+                        pos = pos st `append` BS.take len (stream st),
+                        stream = s'})
           ; LFail e ->
-                if BS.null s
-                then (PMore $ \s' -> this ((), PState pos s'), PState pos s)
-                else runState noS (e, PState pos s)
+                if BS.null (stream st)
+                then (PMore $ \s' -> this ((), st { stream = s'}), st)
+                else runState noS (e,st)
             }
         in this
 
@@ -81,19 +83,19 @@ lex_ theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
 lex :: LexerArrow () e -> Parser () ByteString
 lex theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $
-        let this = \((),PState pos s) -> case lexer theLexer ((),s) of {
+        let this = \((),st) -> case lexer theLexer ((),stream st) of {
             LDone (_,s') ->
-                let len = BS.length s - BS.length s'
+                let len = BS.length (stream st) - BS.length s'
                 in  if len == 0
-                    then runState okS (BS.empty, PState pos s')
+                    then runState okS (BS.empty, st { stream = s'})
                     else runState
                             okC
-                            (let out = BS.take len s
-                              in (out, PState (append pos out) s'))
+                            ( let out = BS.take len (stream st)
+                              in (out, st { pos = pos st `append` out , stream = s' }) )
           ; LFail e ->
-                if BS.null s
-                then (PMore $ \s' -> this ((),PState pos s'), PState pos s)
-                else runState noS (e, PState pos s)
+                if BS.null (stream st)
+                then (PMore $ \s' -> this ((),st { stream = s'}), st)
+                else runState noS (e,st)
             }
         in this
 
@@ -104,13 +106,13 @@ lex theLexer = Parser $ ParserArrow $ \noC okS noS okC ->
 --   ## TODO: can be implemented on top of ArrowError class
 try :: Parser i o -> Parser i o
 try p = Parser $ ParserArrow $ \noC okS noS okC ->
-    StateArrow $ \(x,s) ->
+    StateArrow $ \(x,st) ->
         runState
             (runParser (theParser p)
-                (noS . StateArrow (\(e,_) -> (e,s)))
+                (noS . StateArrow (\(e,_) -> (e,st)))
                 okS noS okC
             )
-            (x,s)
+            (x,st)
 
 option :: ArrowPlus a => o -> a () o -> a () o
 option x try =
@@ -136,22 +138,23 @@ between begin end inside = proc () -> do
 pause :: Parser i i
 pause = Parser $ ParserArrow $ \noC okS noS okC ->
     StateArrow $
-        let this = \(x, PState pos s) ->
-                    if BS.null s
-                    then (PMore $ \s' -> this (x, PState pos s'), PState pos s)
-                    else runState okS (x, PState pos s)
+        let this = \(x, st) ->
+                    if BS.null (stream st)
+                    then (PMore $ \s' -> this (x, st {stream = s'}), st)
+                    else runState okS (x, st)
         in this
 
 getPos :: Parser () TextPos
 getPos = proc () -> do
-    PState pos _ <- fetch -< ()
+    PState pos _ _ <- fetch -< ()
     returnA -< pos
 
 -- Internals
 
 data PState = PState {
         pos         :: !TextPos,
-        stream      :: !ByteString
+        stream      :: !ByteString,
+        prefix      :: [ByteString]
     }
 
 instance Show a => Show (PResult a) where

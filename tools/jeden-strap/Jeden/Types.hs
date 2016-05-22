@@ -10,17 +10,21 @@ import Prelude (
     )
 
 type Ident = ByteString
+type Level = Int            -- plug before we have a genuine Level system
 
 data Type
-  = TypType
-  | TypVar Int
+  = TypVar Int
   | TypConst Ident
   | TypUnit
-  | TypSigma Type Type
-  | TypPi Type Type
+  | TypForall Type Type
+  | TypExists Type Type
+  | TypW Type Type
   | TypApp Type Type
+  | TypeU Level
+  | TypeEl Level Type
   deriving (Eq, Show)
 
+-- type Term = Clause
 
 -- Abstract Syntax Tree, intermediate representation after parsing
 

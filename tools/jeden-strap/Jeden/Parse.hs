@@ -223,3 +223,18 @@ vskip = proc () -> do
     manyws -< ()
     many ((lex_ $ L.word8 10) >>> pause >>> manyws) -< ()
     returnA -< ()
+
+-- Upgrade a parser to consume _trailing_ horizontal white-space
+lexeme :: Parser a b -> Parser a b
+lexeme p = proc x -> do
+    y <- p -< x
+    manyws -< ()
+    return -< y
+
+-- Layout detection
+
+-- pushIndent
+-- popIndent
+-- indent
+-- unindent
+-- reindent
