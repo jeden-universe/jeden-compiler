@@ -17,7 +17,11 @@ Surprinsingly, pointless type theory is far from pointless!
 -}
 module Pointless.Type (
     TVar,
-    PType(..)
+    PType(..),
+    typeVars,
+    Subst(..),
+    idSubst, compSubst, appSubst,
+    morphism, coproduct
 )
 where
 
@@ -53,6 +57,12 @@ idSubst :: Set TVar -> Subst
 idSubst = Subst . M.fromAscList . map (\v -> (v,TVar v)) . S.toAscList
 
 {-| Composition of substitutions.
+
+Composition is performed in 'Category' order, i.e.,
+
+> compSubst g f
+
+produces a substition that applies first @f@, then @g@.
 -}
 compSubst :: Subst -> Subst -> Subst
 compSubst g (Subst f) =
