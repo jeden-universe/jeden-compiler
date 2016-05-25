@@ -32,6 +32,9 @@ import Control.Monad.Trans.State
 import Data.Map (Map)
 import qualified Data.Map as M
 
+import Data.Ratio ((%))
+import qualified Text.PrettyPrint.HughesPJClass as P
+
 import Pointless.Type
 
 {-| A term variable is just a 'String'.
@@ -133,3 +136,16 @@ mjoin m1 m2 = do
             Nothing     -> Nothing
         ) m1 m2
     return $ m1 M.\\ m2 `M.union` m2 M.\\ m1 `M.union` mu
+
+
+instance P.Pretty SLambda where
+    pPrintPrec lvl prec (SVar x) = P.text x
+    pPrintPrec lvl prec (SAbs x e) = P.maybeParens (prec > 0 % 1) $
+        P.char '\\' P.<> P.text x P.<> P.char '.' P.<+> P.pPrintPrec lvl (0 % 1) e
+    pPrintPrec lvl prec (SApp m n) = P.maybeParens (prec > 0 % 1) $
+        P.pPrintPrec lvl (0 % 1) m P.<+> P.pPrintPrec lvl (1 % 1) n
+
+instance P.Pretty PLambda where
+    pPrintPrec lvl prec (PLambda slam typ) = P.maybeParens (prec > 0 % 1) $
+        P.pPrintPrec lvl (0 % 1) slam P.<+> P.char ':' P.<+> P.pPrintPrec lvl (0 % 1) typ
+        

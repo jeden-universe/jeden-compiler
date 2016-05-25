@@ -30,6 +30,10 @@ import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 
+import Data.Ratio ((%))
+import qualified Text.PrettyPrint.HughesPJClass as P
+
+
 {-| A type variable is just a 'String'.
 -}
 type TVar = String
@@ -121,3 +125,9 @@ coproduct (TFun s1 t1) (TFun s2 t2) = do
                 (fmap Just)
                 (fmap Just)
                 a b
+
+instance P.Pretty PType where
+    pPrintPrec lvl prec (TVar a) = P.text a
+    pPrintPrec lvl prec (TFun s t) =
+        P.maybeParens (prec > 0 % 1) $
+            P.pPrintPrec lvl (1 % 1) s P.<+> P.ptext "->" P.<+> P.pPrintPrec lvl (0 % 1) t
