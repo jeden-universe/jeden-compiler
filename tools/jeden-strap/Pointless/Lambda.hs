@@ -47,14 +47,52 @@ data SLambda
   = SVar Var
   | SAbs Var SLambda
   | SApp SLambda SLambda
-  deriving (Show,Eq)
+  | SBnd SLambda [(Var,SLambda)]
+  deriving (Show)
+
+-- internal definition for whnf reduction
+-- should only be called on terms known to be closed
+--   otherwise this can spin or crash
+whnf :: SLambda -> SLambda
+whnf (SAbs x e) = SAbs x e
+whnf (SApp f c) = whnf (beta (SApp f c))
+whnf (SBnd e s) = whnf (sigma (SBnd e s))
+
+-- single-step sigma reduction
+sigma :: SLambda -> SLambda
+sigma (SBnd m [])
+    = m
+sigma (SBnd (SVar v) s)
+    = case lookup v s of
+        Just p  -> p
+        Nothing -> SVar v
+sigma (SBnd (SAbs v m) s)
+    = SAbs v (SBnd m (filter (f v) s)) where f v (x,_) = x /= v
+sigma (SBnd (SApp m n) s)
+    = SApp (SBnd m s) (SBnd n s)
+sigma (SBnd (SBnd m s) t)
+    = (SBnd m (s ++ t))
+sigma m
+    = m
+
+-- single-step beta reduction
+beta :: SLambda -> SLambda
+beta (SApp (SAbs v m) n) = SBnd m [(v,n)]
+beta m = m
+
 
 {-| The type of pointless lambda expressions, well-typed closed Lambda
 expressions.
 -}
 data PLambda
   = PLambda SLambda PType
-  deriving (Show,Eq)
+  deriving (Show)
+
+pterm :: PLambda -> SLambda
+pterm (PLambda e _) = e
+
+ptype :: PLambda -> PType
+ptype (PLambda _ t) = t
 
 {-| Constructor for 'PLambda' expressions, i.e., closed typeable lambda terms, from
 a syntactic lambda expression of type 'SLambda'.
@@ -63,15 +101,43 @@ plambda :: SLambda -> Either String PLambda
 plambda e = do
     tp <- runReader (evalStateT (runExceptT (algoC e)) 0) emptyCtx
     if M.null (fvars tp)
-    then return $ PLambda e (ptype tp)
+    then return $ PLambda e (itype tp)
     else Left $
         "undefined variable"
         ++ (if M.size (fvars tp) == 1 then ":\n" else "s:\n")
         ++ M.foldMapWithKey (\k a -> "  " ++ k ++ " : " ++ show a ++ "\n") (fvars tp)
 
+psrc :: PLambda -> PType
+psrc (PLambda _ (TFun src _)) = src
+
+ptgt :: PLambda -> PType
+ptgt (PLambda _ (TFun _ tgt)) = tgt
+
+punit :: PLambda
+punit = PLambda (SAbs "x" (SVar "x")) (TFun (TVar "a") (TVar "a"))
+
+pid :: PType -> PLambda
+pid t = PLambda (SAbs "x" (SVar "x")) (TFun t t)
+
+pcompose :: PLambda -> PLambda -> Either String PLambda
+pcompose g f =
+    case morphism (psrc g) (ptgt f) of
+        Just s  -> Right $ PLambda -- \g f x. g (f x)
+            (SAbs "g" (SAbs "f" (SAbs "x" (SApp (pterm g) (SApp (pterm f) (SVar "x"))))))
+            (TFun (psrc f) (appSubst s $ ptgt g)) -- TODO: remove type collisions
+        Nothing -> Left "fail!"
+
+peval :: PLambda -> PLambda -> Either String PLambda
+peval f x =
+    case morphism (psrc f) (ptype x) of
+        Just s  -> Right $ PLambda
+            (whnf $ SApp (pterm f) (pterm x))
+            (appSubst s $ ptgt f)
+        Nothing -> Left "fail!"
+
 data Typing = Typing {
     fvars       :: Map Var PType,
-    ptype       :: PType
+    itype       :: PType
 }
 
 newtype Context
@@ -97,15 +163,15 @@ algoC (SAbs x e) = do
         Just t' ->
             return $ Typing
                 (M.delete x (fvars tp))
-                (TFun t' (ptype tp))
+                (TFun t' (itype tp))
         Nothing -> do
             a <- new
-            return $ tp { ptype = TFun a (ptype tp) }
+            return $ tp { itype = TFun a (itype tp) }
 algoC (SApp f e) = do
     tp1 <- algoC f
     tp2 <- algoC e
     beta <- new
-    case morphism (TFun (ptype tp2) beta) (ptype tp1) of
+    case morphism (TFun (itype tp2) beta) (itype tp1) of
         Just s ->
             case mjoin (fvars tp1) (fmap (appSubst s) (fvars tp2)) of
                 Just mr ->
@@ -126,7 +192,7 @@ new = do
 
 inst :: Typing -> AlgoC Typing
 inst tp =
-    return $ Typing undefined (ptype tp)
+    return $ Typing undefined (itype tp)
 
 mjoin :: Map Var PType -> Map Var PType -> Maybe (Map Var PType)
 mjoin m1 m2 = do
@@ -148,4 +214,3 @@ instance P.Pretty SLambda where
 instance P.Pretty PLambda where
     pPrintPrec lvl prec (PLambda slam typ) = P.maybeParens (prec > 0 % 1) $
         P.pPrintPrec lvl (0 % 1) slam P.<+> P.char ':' P.<+> P.pPrintPrec lvl (0 % 1) typ
-        
