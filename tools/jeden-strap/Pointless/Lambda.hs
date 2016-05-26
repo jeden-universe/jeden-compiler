@@ -160,7 +160,9 @@ infixr 9 ⚬
 fails, generate a runtime error.
 -}
 (⚬) :: PLambda -> PLambda -> PLambda
-(⚬) m n = (\(Right m) -> m) $ pcompose m n
+(⚬) m n = case pcompose m n of
+    Right m -> m
+    Left e  -> error e
 
 
 {-| Evaluation map of lambda terms. Apply the first term on the second one.
@@ -180,7 +182,9 @@ infixr 7 ∙
 generate a runtime error.
 -}
 (∙) :: PLambda -> PLambda -> PLambda
-(∙) f e = (\(Right m) -> m) $ peval f e
+(∙) f e = case peval f e of
+    Right m -> m
+    Left e  -> error e
 
 
 data Typing = Typing {
