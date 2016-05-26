@@ -119,14 +119,22 @@ punit = PLambda (SAbs "x" (SVar "x")) (TFun (TVar "a") (TVar "a"))
 pid :: PType -> PLambda
 pid t = PLambda (SAbs "x" (SVar "x")) (TFun t t)
 
+infixr 9 ⚬
+(⚬) = pcompose
+
+-- TODO: fix the type variable scope issue
 pcompose :: PLambda -> PLambda -> Either String PLambda
 pcompose g f =
     case morphism (psrc g) (ptgt f) of
         Just s  -> Right $ PLambda -- \g f x. g (f x)
             (SAbs "g" (SAbs "f" (SAbs "x" (SApp (pterm g) (SApp (pterm f) (SVar "x"))))))
-            (TFun (psrc f) (appSubst s $ ptgt g)) -- TODO: remove type collisions
+            (TFun (psrc f) (appSubst s $ ptgt g))
         Nothing -> Left "fail!"
 
+infixr 7 ∙
+(∙) = peval
+
+-- TODO: fix the type variable scope issue
 peval :: PLambda -> PLambda -> Either String PLambda
 peval f x =
     case morphism (psrc f) (ptype x) of
@@ -210,6 +218,15 @@ instance P.Pretty SLambda where
         P.char '\\' P.<> P.text x P.<> P.char '.' P.<+> P.pPrintPrec lvl (0 % 1) e
     pPrintPrec lvl prec (SApp m n) = P.maybeParens (prec > 0 % 1) $
         P.pPrintPrec lvl (0 % 1) m P.<+> P.pPrintPrec lvl (1 % 1) n
+    pPrintPrec lvl prec (SBnd e s) =
+        P.pPrintPrec lvl (1 % 1) e P.<> printBinds lvl s
+        where
+            printBinds lvl [] = P.text "[]"
+            printBinds lvl [(x,e)] =
+                P.char '[' P.<> P.pPrintPrec lvl (0 % 1) e P.<> P.char '/' P.<> P.text x P.<> P.char ']'
+            printBinds lvl ((x,e) : bs) =
+                P.char '[' P.<> P.pPrintPrec lvl (0 % 1) e P.<> P.char '/' P.<> P.text x P.<> P.char ']'
+                P.<> printBinds lvl bs
 
 instance P.Pretty PLambda where
     pPrintPrec lvl prec (PLambda slam typ) = P.maybeParens (prec > 0 % 1) $
