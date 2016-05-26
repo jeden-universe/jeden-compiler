@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 
 {-|
 Module          : Pointless.Lambda
@@ -29,17 +30,18 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.State
-import Data.Map (Map)
+import Data.ByteString.Short        ( ShortByteString, unpack )
+import Data.Map                     ( Map )
 import qualified Data.Map as M
 
-import Data.Ratio ((%))
+import Data.Ratio                   ( (%) )
 import qualified Text.PrettyPrint.HughesPJClass as P
 
 import Pointless.Type
 
-{-| A term variable is just a 'String'.
+{-| A term variable is just a 'ShortByteString'.
 -}
-type Var = String
+type Var = ShortByteString
 
 {-| The type of syntactic lambda expressions, also called pre-terms.
 -}
@@ -111,7 +113,11 @@ plambda e = do
     else Left $
         "undefined variable"
         ++ (if M.size (fvars tp) == 1 then ":\n" else "s:\n")
-        ++ M.foldMapWithKey (\k a -> "  " ++ k ++ " : " ++ P.render (P.pPrint a) ++ "\n") (fvars tp)
+        ++ M.foldMapWithKey
+            (\k a -> "  " ++ P.render (P.pPrint k)
+             ++ " : " ++ P.render (P.pPrint a)
+             ++ "\n")
+            (fvars tp)
 
 {-| Get the source type of the term.
 
@@ -186,6 +192,10 @@ generate a runtime error.
     Right m -> m
     Left e  -> error e
 
+
+-----
+-- Internals
+-----
 
 data Typing = Typing {
     fvars       :: Map Var PType,
@@ -263,10 +273,13 @@ mjoin m1 m2 = do
     return $ m1 M.\\ m2 `M.union` m2 M.\\ m1 `M.union` mu
 
 
+instance P.Pretty ShortByteString where
+    pPrintPrec lvl prec = P.text . map (toEnum . fromEnum) . unpack
+
 instance P.Pretty SLambda where
-    pPrintPrec lvl prec (SVar x) = P.text x
+    pPrintPrec lvl prec (SVar x) = P.pPrint x
     pPrintPrec lvl prec (SAbs x e) = P.maybeParens (prec > 0 % 1) $
-        P.char '\\' P.<> P.text x P.<> P.char '.' P.<+> P.pPrintPrec lvl (0 % 1) e
+        P.char '\\' P.<> P.pPrint x P.<> P.char '.' P.<+> P.pPrintPrec lvl (0 % 1) e
     pPrintPrec lvl prec (SApp m n) = P.maybeParens (prec > 0 % 1) $
         P.pPrintPrec lvl (0 % 1) m P.<+> P.pPrintPrec lvl (1 % 1) n
     pPrintPrec lvl prec (SBnd e s) =
@@ -274,9 +287,9 @@ instance P.Pretty SLambda where
         where
             printBinds lvl [] = P.text "[]"
             printBinds lvl [(x,e)] =
-                P.char '[' P.<> P.pPrintPrec lvl (0 % 1) e P.<> P.char '/' P.<> P.text x P.<> P.char ']'
+                P.char '[' P.<> P.pPrintPrec lvl (0 % 1) e P.<> P.char '/' P.<> P.pPrint x P.<> P.char ']'
             printBinds lvl ((x,e) : bs) =
-                P.char '[' P.<> P.pPrintPrec lvl (0 % 1) e P.<> P.char '/' P.<> P.text x P.<> P.char ']'
+                P.char '[' P.<> P.pPrintPrec lvl (0 % 1) e P.<> P.char '/' P.<> P.pPrint x P.<> P.char ']'
                 P.<> printBinds lvl bs
 
 instance P.Pretty PLambda where
