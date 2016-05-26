@@ -98,6 +98,7 @@ morphism (TFun s1 t1) (TFun s2 t2) = do
     if and $ M.intersectionWith (==) s12 t12
     then Just $ Subst (s12 `M.union` t12)
     else Nothing
+morphism _ _ = Nothing
 
 {-| The coproduct of two types @a@ and @b@ is the smallest type @u@ such that
 

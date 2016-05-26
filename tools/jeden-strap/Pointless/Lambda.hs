@@ -21,7 +21,7 @@ module Pointless.Lambda (
     Var,
     SLambda(..),
     PLambda,
-    plambda
+    plambda, pterm, ptype, psrc, ptgt, pid, pcompose, peval, (⚬), (∙)
 )
 where
 
@@ -51,7 +51,7 @@ data SLambda
   deriving (Show)
 
 -- internal definition for whnf reduction
--- should only be called on terms known to be closed
+-- should only be called on terms known to be closed and typed
 --   otherwise this can spin or crash
 whnf :: SLambda -> SLambda
 whnf (SAbs x e) = SAbs x e
@@ -88,14 +88,20 @@ data PLambda
   = PLambda SLambda PType
   deriving (Show)
 
+{-| Extract a syntactical lambda term from a pointless typed lambda term.
+-}
 pterm :: PLambda -> SLambda
 pterm (PLambda e _) = e
 
+{-| Extract the pointless type of a lambda term.
+-}
 ptype :: PLambda -> PType
 ptype (PLambda _ t) = t
 
 {-| Constructor for 'PLambda' expressions, i.e., closed typeable lambda terms, from
 a syntactic lambda expression of type 'SLambda'.
+
+In case of error, returns an explanatory string.
 -}
 plambda :: SLambda -> Either String PLambda
 plambda e = do
@@ -105,43 +111,77 @@ plambda e = do
     else Left $
         "undefined variable"
         ++ (if M.size (fvars tp) == 1 then ":\n" else "s:\n")
-        ++ M.foldMapWithKey (\k a -> "  " ++ k ++ " : " ++ show a ++ "\n") (fvars tp)
+        ++ M.foldMapWithKey (\k a -> "  " ++ k ++ " : " ++ P.render (P.pPrint a) ++ "\n") (fvars tp)
 
+{-| Get the source type of the term.
+
+This type categorizes the source of the term seen as a morphism.
+-}
 psrc :: PLambda -> PType
 psrc (PLambda _ (TFun src _)) = src
 
+{-| Get the target type of the term.
+
+This type categorizes the target of the term seen as a morphism.
+-}
 ptgt :: PLambda -> PType
 ptgt (PLambda _ (TFun _ tgt)) = tgt
 
+{-| The unit of the closed category structure.  The unit is the identity function over an initial type.
+
+> punit = λx. x : a → a
+-}
 punit :: PLambda
 punit = PLambda (SAbs "x" (SVar "x")) (TFun (TVar "a") (TVar "a"))
 
+{-| Build the identity morhpism over an object categorized by a type.
+-}
 pid :: PType -> PLambda
 pid t = PLambda (SAbs "x" (SVar "x")) (TFun t t)
 
-infixr 9 ⚬
-(⚬) = pcompose
+{-| Composition of lambda terms.
 
--- TODO: fix the type variable scope issue
+This function is more tolerant than categorical composition which requires
+an equality of objects. It attempts a unification of the source of the first
+argument with the target of the second. This function fails, with an explanatory
+message, only if the supplied morphisms cannot possibly be composed.
+-}
 pcompose :: PLambda -> PLambda -> Either String PLambda
+-- TODO: fix the type variable scope issue
 pcompose g f =
     case morphism (psrc g) (ptgt f) of
         Just s  -> Right $ PLambda -- \g f x. g (f x)
             (SAbs "g" (SAbs "f" (SAbs "x" (SApp (pterm g) (SApp (pterm f) (SVar "x"))))))
             (TFun (psrc f) (appSubst s $ ptgt g))
-        Nothing -> Left "fail!"
+        Nothing -> Left "fail: pcompose"
 
-infixr 7 ∙
-(∙) = peval
+infixr 9 ⚬
+{-| Infix operator for 'pcompose' not tolerating failure. If the composition
+fails, generate a runtime error.
+-}
+(⚬) :: PLambda -> PLambda -> PLambda
+(⚬) m n = (\(Right m) -> m) $ pcompose m n
 
--- TODO: fix the type variable scope issue
+
+{-| Evaluation map of lambda terms. Apply the first term on the second one.
+Fail with an explanatory message if the types are incompatible.
+-}
 peval :: PLambda -> PLambda -> Either String PLambda
+-- TODO: fix the type variable scope issue
 peval f x =
     case morphism (psrc f) (ptype x) of
         Just s  -> Right $ PLambda
             (whnf $ SApp (pterm f) (pterm x))
             (appSubst s $ ptgt f)
-        Nothing -> Left "fail!"
+        Nothing -> Left "fail: peval"
+
+infixr 7 ∙
+{-| Infix operator for 'peval' not tolerating failure. If the application fails,
+generate a runtime error.
+-}
+(∙) :: PLambda -> PLambda -> PLambda
+(∙) f e = (\(Right m) -> m) $ peval f e
+
 
 data Typing = Typing {
     fvars       :: Map Var PType,
@@ -185,9 +225,16 @@ algoC (SApp f e) = do
                 Just mr ->
                     return $ Typing mr (appSubst s beta)
                 Nothing ->
-                    throwE "fail!"
+                    throwE "fail: algoC"
         Nothing ->
-            throwE "fail!"
+            throwE $
+                "Type error:\n"
+                ++ "  in application\n"
+                ++ "    of: " ++ P.render (P.pPrint f)
+                ++ "\n       type: " ++ P.render (P.pPrint $ itype tp1)
+                ++ "\n    on: " ++ P.render (P.pPrint e)
+                ++ "\n       type: " ++ P.render (P.pPrint $ TFun (itype tp2) beta)
+                ++ "\n\n"
 
 new :: AlgoC PType
 new = do
