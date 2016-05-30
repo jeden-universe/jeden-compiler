@@ -1,8 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 
-module Pointless.Parse (
-
-)
+module Pointless.Parse
 where
 
 import Pointless.Lambda         ( SLambda(..) )
@@ -11,14 +9,15 @@ import Pointless.Type
 import Text.ByoParser
 import Text.ByoParser.Stream
 
+import Data.Bool                ( Bool(..), (&&) )
 import Data.ByteString          ( ByteString )
 import Data.ByteString.Short    ( ShortByteString, toShort, pack )
 import Data.List                ( null, foldl, foldr )
+import Data.String              ( String )
 import Data.Word                ( Word8 )
 
 import Prelude (
-    ($), String, Eq(..), Bool(..), (&&), (<=),
-    return, otherwise )
+    ($), Eq(..), (<=), return, otherwise )
 
 type Lam = SLambda
 var    = SVar

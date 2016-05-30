@@ -9,8 +9,8 @@ Maintainer      : nicolas.godbout@gmail.com
 Stability       : experimental
 
 The well-formed terms of pointless type theory are closed typed lambda terms.
-To build a lambda term, one first presents it as a _syntactical_ object of
-type 'SLambda'. In litterature, such an object is often called a _pre-term_,
+To build a lambda term, one first presents it as a /syntactical/ object of
+type 'SLambda'. In litterature, such an object is often called a /pre-term/,
 to convey the fact that it is not guaranteed to be a well-formed term.
 
 Well-formed terms are generated using the function 'plambda' which, presented
