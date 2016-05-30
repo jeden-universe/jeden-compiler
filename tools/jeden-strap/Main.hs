@@ -16,17 +16,18 @@ import Data.ByteString.Short
 import Data.ByteString.UTF8
     ( fromString )
 import qualified Data.Map as Map
+import Text.PrettyPrint.HughesPJClass
 
 import Text.ByoParser
 import Text.ByoParser.Result
 import Text.ByoParser.Stream
 
 import Pointless.Lambda
-import Pointless.Parse    ( plambda, ptermdef )
+import Pointless.Parse
 import Pointless.Type
 
 
-type Parser a = forall r. ParserPrim ByteString String () r a
+type CmdParser a = forall r. ParserPrim ByteString String () r a
 
 main :: IO ()
 main = do
@@ -82,7 +83,12 @@ data Command =
 
 process :: Command -> Env -> IO Env
 process (Def nam lam) env =
-    repl env { binds = Map.insert nam lam (binds env) }
+    case Pointless.Lambda.plambda lam of
+        Right lam ->
+            repl env { binds = Map.insert nam lam (binds env) }
+        Left err -> do
+            putStrLn $ fromString err
+            repl env
 
 process (Expr mor) env =
     repl env
@@ -118,19 +124,19 @@ process (Load name) env = do
 
 process Quit env = return env
 
-command :: Parser Command
+command :: CmdParser Command
 command =
         ( do
             string "#show"
-            psomespace
-            name <- pident
-            pmanyspace
+            somespace
+            name <- _IDENT
+            manyspace
             token 10
             return $ Show name
         )
     <|> ( do
             string "#load"
-            psomespace
+            somespace
             name <- takeWhile1 isAsciiLetter  -- TODO change to filename
             return $ Load name
         )
@@ -143,7 +149,7 @@ command =
             return $ Def nam lam
         )
     <|> ( do
-            lam <- lambda
+            lam <- Pointless.Parse.plambda
             return $ Expr lam
         )
 
