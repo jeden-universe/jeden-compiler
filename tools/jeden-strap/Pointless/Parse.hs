@@ -4,6 +4,7 @@ module Pointless.Parse
 where
 
 import Pointless.Lambda         ( SLambda(..) )
+import Pointless.Lex
 import Pointless.Type
 
 import Text.ByoParser
@@ -49,20 +50,22 @@ termvar   ::= VAR
 
 -}
 
-type Parser a = forall r. ParserPrim ByteString String () r a
+type Parser a = forall r. ParserPrim [Token] String () r a
 
 termdef :: Parser (ShortByteString, Lam)
 --      ::= IDENT '::=' term
 termdef = do
-    name <- _IDENT
-    token 0x3A -- ':'
-    token 0x3D -- '='
-    somespace
+    TokName name loc1 <- anyToken
+    TokSymbol sym loc2 | sym == ":=" <- anyToken
     trm <- term
     return (name,trm)
 
+
+
 term :: Parser Lam
 --   ::= lambda | ( termvar | '(' term ')' )+
+term = undefined
+{-
 term =
     plambda <|> ( do
             trm <- termvar <|> parterm
@@ -148,3 +151,4 @@ isAsciiLetter c
     | 0x41 <= c && c <= 0x5A = True
     | 0x61 <= c && c <= 0x7A = True
     | otherwise              = False
+-}
