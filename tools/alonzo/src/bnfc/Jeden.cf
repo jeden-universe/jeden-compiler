@@ -1,0 +1,31 @@
+
+entrypoints Module ;
+
+comment "# " ;
+
+Module.     Module ::= "#module" ModName "where" [Statement] ;
+
+terminator  Statement ";" ;
+
+TypeDef.    Statement ::= Symbol "::=" Type ;
+TermDecl.   Statement ::= Symbol "::"  Type ;
+TermDef.    Statement ::= Symbol ":="  Term ;
+
+TyVar.      Type2     ::= Symbol ;
+TyFun.      Type      ::= Type2 "->" Type ;
+_.          Type      ::= Type2 ;
+_.          Type2     ::= "(" Type ")" ;
+
+Var.        Term3     ::= Symbol ;
+App.        Term2     ::= Term2 Term3 ;
+
+_.          Term      ::= Term2 ;
+_.          Term2     ::= Term3 ;
+_.          Term3     ::= "(" Term ")" ;
+
+Abs.        Term      ::= "\\" Symbol Term4 ;
+_.          Term4     ::= "." Term ;
+Abs.        Term4     ::= Symbol Term4 ;
+
+position token Symbol (letter (letter | digit | '_')* ) ;
+token ModName ':'(letter letter*) ;
