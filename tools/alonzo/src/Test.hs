@@ -1,8 +1,9 @@
 
-module Jeden.Test where
+module Test where
 
-import Jeden.Phase1
-import Jeden.Phase2
+import Phase1
+import Phase2
+import Phase3
 
 import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs, getProgName )
@@ -47,4 +48,4 @@ main = do
     [] -> hGetContents stdin >>= run 2 parse
     "-s":fs -> mapM_ (runFile 0 parse) fs
     fs -> mapM_ (runFile 2 parse) fs
-  where parse s = phase1 s >>= phase2
+  where parse s = phase1 s >>= phase2 >>= phase3

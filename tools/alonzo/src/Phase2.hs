@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module Phase2 (
-    Module(..), Statement(..), Type(..), Term(..), Symbol(..),
+    module Phase1,
+    -- Module(..), Statement(..), Type(..), Term(..), Symbol(..),
+    Position(..),
     Globals(..), Global(..), Meaning(..),
     phase2
 ) where
@@ -11,9 +13,10 @@ import Phase1 (
     Module(..), Statement(..), Type(..), Term(..), Symbol(..) )
 
 import Data.Map         ( Map, empty, lookup, insert, assocs )
-import GHC.Generics ( Generic )
+import GHC.Generics     ( Generic )
 import Text.PrettyPrint.GenericPretty ( Out(..) )
-import Prelude ( ($), (.), Either(..), Int, Maybe(..), Show, String )
+import Text.Show        ( Show(..), shows, showString )
+import Prelude ( ($), (.), Either(..), Int, Maybe(..), String )
 
 -----
 -- begin AST
@@ -37,6 +40,9 @@ instance (Out k, Out a) => Out (Map k a) where
 -- end AST
 -----
 
+{- | Phase 2 transformation.  Gather all symbols into a dictionary.
+Check that terms are both defined and declared.
+-}
 phase2 :: Module -> Either String Globals
 phase2 (Module modName stmts) = go empty stmts
     where
@@ -57,6 +63,8 @@ phase2 (Module modName stmts) = go empty stmts
                 Just (MTypeDef typ _) ->
                     go (insert ident (MTermDef typ trm pos) globals) stmts
                 Nothing ->
-                    Left $ "Term defined but not declared"
+                    Left $ shows pos . showString ":\n"
+                         . showString "  Term defined but not declared\n"
+                         $ ""
 
         go globals [] = Right (Globals globals)
