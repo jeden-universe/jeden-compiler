@@ -14,16 +14,22 @@ import Control.Monad.Trans.Except   ( ExceptT(..), throwE, runExceptT )
 import Control.Monad.Trans.Reader   ( Reader, ask, runReader )
 import Control.Monad.Trans.State    ( StateT(..), get, modify, evalStateT )
 import Data.Map as M (
-    Map, (\\), empty, singleton, lookup, findWithDefault,
+    Map, (\\), empty, singleton,
+    null, lookup, findWithDefault,
     insert, delete,
-    union, intersectionWith, mergeWithKey,
+    union, intersectionWith, intersectionWithKey, mergeWithKey,
     fromAscList, toAscList, assocs
     )
-import Text.Show                    ( Show(..), shows, showString )
-import Text.PrettyPrint.GenericPretty ( pretty )
+import Text.PrettyPrint.HughesPJClass  ( Pretty(..), render )
+-- import Text.Show                    ( Show(..), ShowS, shows, showString )
+-- import Text.PrettyPrint.GenericPretty ( pretty )
 
-import Prelude hiding ( lookup )
+import Prelude hiding ( null, lookup )
 -- ( ($), Int, Maybe(..), Num(..), String, (++), undefined )
+
+
+pretty :: Pretty a => a -> ShowS
+pretty = showString . render . pPrint
 
 
 phase3 :: Globals -> Either String Globals
@@ -54,8 +60,8 @@ checkTermDefs (Globals globals) = do
                 _                -> Left
                     $ shows pos . showString ":\n"
                     . showString "  • Type mismatch in definition of " . showString ident . showChar '\n'
-                    . showString "      declared :: " . shows dtyp . showChar '\n'
-                    . showString "      inferred :: " . shows ityp . showChar '\n'
+                    . showString "      declared :: " . pretty dtyp . showChar '\n'
+                    . showString "      inferred :: " . pretty ityp . showChar '\n'
                     $ ""
 
 buildContext :: Globals -> Either String Context
@@ -75,6 +81,22 @@ buildContext (Globals globals) = do
                  . showString " has no associated definition.\n"
                  $ ""
 
+unifyTypings :: Map Local Type -> Map Local Type -> Either String (Map Local Type)
+unifyTypings m1 m2 = do
+    mu <- sequence $ M.intersectionWithKey
+        (\k s t -> case coproduct s t of
+            Just (_,st) -> Right $ appSubst st t
+            Nothing     -> Left
+                $ showString "Type error:\n"
+                . showString "  • Incompatible types for " . showString k . showChar '\n'
+                . showString "    :: " . pretty s . showChar '\n'
+                . showString "    :: " . pretty t . showChar '\n'
+                . showChar '\n'
+                $ ""
+        ) m1 m2
+    return $ (m1 \\ m2) `M.union` (m2 \\ m1) `M.union` mu
+
+
 type2to3 :: P2.Type -> P3.Type
 type2to3 (P2.TyVar (Symbol (pos,v))) = P3.TyVar v
 type2to3 (P2.TyFun t1 t2) = P3.TyFun (type2to3 t1) (type2to3 t2)
@@ -93,6 +115,8 @@ runAlgoC ctx trm =
 
 {-| Infer the type of the given expression using Algorithm C.
 -}
+-- TODO: Typings should contain a position so that unification error
+--   messages can provide locations
 algoC :: Term -> AlgoC Typing
 algoC (Var (Symbol (pos,x))) = do
     (Context ctx) <- lift $ lift $ ask
@@ -116,22 +140,23 @@ algoC (App f e) = do
     tp1 <- algoC f
     tp2 <- algoC e
     beta <- new
-    case morphism (TyFun (itype tp2) beta) (itype tp1) of
-        Just s ->
-            case mapjoin (locals tp1) (fmap (appSubst s) (locals tp2)) of
-                Just mr ->
-                    return $ Typing mr (appSubst s beta)
-                Nothing ->
-                    throwE "fail: algoC"
+    -- TODO unify typings
+    case coproduct (TyFun (itype tp2) beta) (itype tp1) of
+        Just (sub1,sub2) ->
+            -- unify typings
+            case unifyTypings (locals tp1) (locals tp2) of
+                Right locs  -> do
+                    let typ = appSubst sub2 (itype tp1)
+                    return $ Typing locs typ
+                Left err ->
+                    throwE err
         Nothing ->
-            throwE $
-                "Type error:\n"
-                ++ "  in application\n"
-                ++ "    of: " ++ pretty f
-                ++ "\n       type: " ++ pretty (itype tp1)
-                ++ "\n    on: " ++ pretty e
-                ++ "\n       type: " ++ pretty (TyFun (itype tp2) beta)
-                ++ "\n\n"
+            throwE
+                $ showString "Type error:\n"
+                . showString "  • Incompatible types in function application\n"
+                . showString "      of" . showChar '\n'
+                . showString "      on" . showChar '\n'
+                $ ""
 
 {-| Create a fresh variable.
 
@@ -151,8 +176,28 @@ fresh variables in the local context. This operation is also called
 skolemization.
 -}
 inst :: Typing -> AlgoC Typing
-inst tp =
-    return $ Typing undefined (itype tp)
+inst (Typing locals itype)
+    | null locals = do
+        (_,otype) <- go empty itype
+        return $ Typing empty otype
+    | otherwise   = error
+        $ showString "Internal error:\n"
+        . showString "  No support for instantiating associated locals variables.\n"
+        $ ""
+    where
+        go :: Map TVar Type -> Type -> AlgoC (Map TVar Type,Type)
+        go subst (TyVar a) =
+            case lookup a subst of
+                Just b  -> return (subst, b)
+                Nothing -> do
+                    b <- new
+                    return (insert a b subst, b)
+        go subst (TyFun s t) = do
+            (subst,u) <- go subst s
+            (subst,v) <- go subst t
+            return (subst, TyFun u v)
+
+
 
 {-| Attempt to join two maps together, provided they agree on their
 intersection. Agreements means that multiple types associated with

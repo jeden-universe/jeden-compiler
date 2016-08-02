@@ -9,6 +9,7 @@ module Phase3.Type (
 
 import Phase3.AST       ( Type(..) )
 
+import Control.Monad    ( guard )
 import Data.Map as M (
     Map, (\\), empty, singleton, lookup, findWithDefault,
     insert, delete,
@@ -61,6 +62,14 @@ appSubst (Subst m) (TyVar a) =
 appSubst m (TyFun s t) =
     TyFun (appSubst m s) (appSubst m t)
 
+{-| Combine two compatible substitutions or fail. Common variables must
+substitute to equal terms on the nose.
+-}
+joinSubst :: Subst -> Subst -> Maybe Subst
+joinSubst (Subst sub1) (Subst sub2) = do
+    guard $ and $ intersectionWith (==) sub1 sub2
+    return $ Subst (sub1 `M.union` sub2)
+
 {-| "More general than" binary relation between types. If the first type
 is indeed more general than the other, this function returns a type
 variable substitution map as a witness of the relation.
@@ -73,11 +82,9 @@ be non-comparable, i.e., neither is more general than the other.
 morphism :: Type -> Type -> Maybe Subst
 morphism (TyVar a) t = Just $ Subst $ M.singleton a t
 morphism (TyFun s1 t1) (TyFun s2 t2) = do
-    Subst s12 <- morphism s1 s2
-    Subst t12 <- morphism t1 t2
-    if and $ M.intersectionWith (==) s12 t12
-    then Just $ Subst (s12 `M.union` t12)
-    else Nothing
+    s12 <- morphism s1 s2
+    t12 <- morphism t1 t2
+    joinSubst s12 t12
 morphism _ _ = Nothing
 
 {-| The coproduct of two types @a@ and @b@ is the smallest type @u@ such that
@@ -93,16 +100,10 @@ coproduct (TyVar a) t =
 coproduct s (TyVar b) =
     Just (idSubst $ typeVars s, Subst $ M.singleton b s)
 coproduct (TyFun s1 t1) (TyFun s2 t2) = do
-    (s12,s21) <- coproduct s1 s2
-    (t12,t21) <- coproduct t1 t2
-    r1 <- unionWith s21 t21 s12 t12
-    r2 <- unionWith s12 t12 s21 t21
-    return (r1,r2)
-    where
-        unionWith :: Subst -> Subst -> Subst -> Subst -> Maybe Subst
-        unionWith d c (Subst a) (Subst b) = fmap Subst $ sequence $
-            M.mergeWithKey
-                (\_ x y -> Nothing) -- TODO  to be continued...
-                (fmap Just)
-                (fmap Just)
-                a b
+    (sub11,sub12) <- coproduct s1 s2
+    (sub21,sub22) <- coproduct t1 t2
+    -- TODO verify that 'joinSubst' is the correct operation. Is more work required?
+    sub1 <- joinSubst sub11 sub21
+    sub2 <- joinSubst sub12 sub22
+    -- TODO verify need for occurs check on (sub1 `compSubst` sub2)
+    return (sub1,sub2)

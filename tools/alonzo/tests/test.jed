@@ -5,10 +5,10 @@
     I := \x . x ;
 
     K :: a -> b -> b ;
-    K := \x. \y. y ;
+    K := \x y. y ;
 
     S :: (a -> b -> c) -> (a -> b) -> a -> c ;
-    S := \x. \y. \z. x z (y z) ;
+    S := \x y z. x z (y z) ;
 
     One ::= any -> any ;
 
@@ -16,7 +16,7 @@
     unit := \x. x ;
 
     elim1 :: out -> One -> out ;
-    elim1 := \x. \t. t x ;
+    elim1 := \x t. t x ;
 
     id :: One -> One ;
     id := \u. u unit ;

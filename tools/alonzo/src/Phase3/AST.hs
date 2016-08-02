@@ -14,6 +14,7 @@ import Phase2           ( Global, Term, Position )
 import Data.Map         ( Map )
 import GHC.Generics
 import Text.PrettyPrint.GenericPretty ( Out )
+import Text.PrettyPrint.HughesPJClass ( Pretty(..), (<+>), text, maybeParens )
 
 
 data Type = TyVar String
@@ -40,3 +41,12 @@ data Typing     = Typing {
     locals      :: Map Local Type,
     itype       :: Type
 }
+
+
+instance Pretty Type where
+    pPrintPrec _ p (TyVar v) =
+        text v
+    pPrintPrec lvl p (TyFun t1 t2) =
+        maybeParens
+            (p >= 1)
+            (pPrintPrec lvl 1 t1 <+> text "->" <+> pPrintPrec lvl 0 t2)
