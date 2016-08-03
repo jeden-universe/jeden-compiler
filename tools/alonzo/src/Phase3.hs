@@ -14,7 +14,7 @@ import Control.Monad.Trans.Except   ( ExceptT(..), throwE, runExceptT )
 import Control.Monad.Trans.Reader   ( Reader, ask, runReader )
 import Control.Monad.Trans.State    ( StateT(..), get, modify, evalStateT )
 import Data.Map as M (
-    Map, (\\), empty, singleton,
+    Map, (!), (\\), empty, singleton,
     null, lookup, findWithDefault,
     insert, delete,
     union, intersectionWith, intersectionWithKey, mergeWithKey,
@@ -57,9 +57,9 @@ checkTermDefs (Globals globals) = do
         check ctx (ident, P2.MTermDef typ trm pos) = do
             Typing loc ityp <- runAlgoC ctx trm
             let dtyp = type2to3 typ
-            case (morphism dtyp ityp, morphism ityp dtyp) of
-                (Just _, Just _) -> Right ()
-                _                -> Left
+            case morphism ityp dtyp of
+                Just _  -> Right ()
+                Nothing -> Left
                     $ shows pos . showString ":\n"
                     . showString "  • Type mismatch in definition of " . showString ident . showChar '\n'
                     . showString "      declared :: " . pretty dtyp . showChar '\n'
@@ -82,32 +82,6 @@ buildContext (Globals globals) = do
                  . showString "  Term declaration " . showString ident
                  . showString " has no associated definition.\n"
                  $ ""
-
--- TODO  replace by this correct(?) algorithm
--- 1) on the intersection:
---   take coproducts
---   gather all substitutions into a single coherent pair
--- 2) on the differences:
---   apply the corresponding substitution
-
--- TODO add a constructor for /bad/ typings, to delay error reporting
---   when comparing to the declaration
-unifyTypings :: Map Local Type -> Map Local Type -> Either String (Map Local Type)
-unifyTypings m1 m2 = do
-    -- the whole following if WRONG
-    mu <- sequence $ M.intersectionWithKey
-        -- (\k s t -> case coproduct s t of
-        --     Just (sub1,_) -> Right $ appSubst sub1 s
-        --     Nothing     -> Left
-        (\k s t -> if s == t then Right t else Left
-                $ showString "Type error:\n"
-                . showString "  • Incompatible types for " . showString k . showChar '\n'
-                . showString "    :: " . pretty s . showChar '\n'
-                . showString "    :: " . pretty t . showChar '\n'
-                . showChar '\n'
-                $ ""
-        ) m1 m2
-    return $ (m1 \\ m2) `M.union` (m2 \\ m1) `M.union` mu
 
 
 type2to3 :: P2.Type -> P3.Type
@@ -153,31 +127,7 @@ algoC (App f e) = do
     tp1 <- algoC f
     tp2 <- algoC e
     beta <- new
-    -- TODO unify typings
-    case coproduct (itype tp1) (TyFun (itype tp2) beta) of
-        Just (sub1,sub2) -> do
-            traceM $ showString "coproduct "
-                   . showParen True (pretty $ itype tp1) . showChar ' '
-                   . showParen True (pretty $ TyFun (itype tp2) beta) . showChar '\n'
-                   . shows sub1 . showChar '\n'
-                   . shows sub2 . showChar '\n'
-                   $ ""
-            -- unify typings
-            case unifyTypings
-                    (fmap (appSubst sub1) $ locals tp1)
-                    (fmap (appSubst sub2) $ locals tp2) of
-                Right locs  -> do
-                    let typ = appSubst sub2 beta
-                    return $ Typing locs typ
-                Left err ->
-                    throwE err
-        Nothing ->
-            throwE
-                $ showString "Type error:\n"
-                . showString "  • Incompatible types in function application\n"
-                . showString "      of" . showChar '\n'
-                . showString "      on" . showChar '\n'
-                $ ""
+    unifyTypings tp1 tp2 { itype = TyFun (itype tp2) beta }
 
 {-| Create a fresh variable.
 
@@ -203,7 +153,7 @@ inst (Typing locals itype)
         return $ Typing empty otype
     | otherwise   = error
         $ showString "Internal error:\n"
-        . showString "  No support for instantiating associated locals variables.\n"
+        . showString "  No support for instantiating associated local variables.\n"
         $ ""
     where
         go :: Map TVar Type -> Type -> AlgoC (Map TVar Type,Type)
@@ -218,18 +168,58 @@ inst (Typing locals itype)
             (subst,v) <- go subst t
             return (subst, TyFun u v)
 
-
-
-{-| Attempt to join two maps together, provided they agree on their
-intersection. Agreements means that multiple types associated with
-local names are unifiable. The generated map contains such unified
-types. The operation is left-biased.
+{-| Unification of typings. It is assumed that the arguments
+represent a lambda application.
 -}
-mapjoin :: Map Local Type -> Map Local Type -> Maybe (Map Local Type)
-mapjoin m1 m2 = do
-    mu <- sequence $ M.intersectionWith
-        (\s t -> case coproduct s t of
-            Just (_,st) -> Just $ appSubst st t
-            Nothing     -> Nothing
-        ) m1 m2
-    return $ m1 \\ m2 `M.union` m2 \\ m1 `M.union` mu
+unifyTypings :: Typing -> Typing -> AlgoC Typing
+unifyTypings tp1 tp2 = do
+    -- 1) on the intersection of the typing contexts:
+    --   gather substitution pairs from coproducts
+    -- subs :: Map String (Subst,Subst)
+    subs <- sequence $ M.intersectionWithKey
+            (\k s t -> case coproduct s t of
+                Just (sub1,sub2) ->
+                    return (sub1,sub2)
+                Nothing -> throwE
+                    $ showString "Type error:\n"
+                    . showString "  • Incompatible types for " . showString k . showChar '\n'
+                    . showString "    :: " . pretty s . showChar '\n'
+                    . showString "    :: " . pretty t . showChar '\n'
+                    . showChar '\n'
+                    $ ""
+            ) (locals tp1) (locals tp2)
+
+    -- 2) on the types:
+    --      build a substitution pair from the coproduct
+    itpair <- case coproduct (itype tp1) (itype tp2) of
+        Just p  -> return p
+        Nothing -> throwE
+            $ showString "Type error:\n"
+            . showString "  • Incompatible types in function application\n"
+            . showString "      of" . showChar '\n'
+            . showString "      on" . showChar '\n'
+            $ ""
+
+    -- 3) on all the collected substitution pairs
+    --      fold coherently
+    let (sub1,sub2) = foldr
+            (\(Subst s1,Subst s2) (Subst t1,Subst t2) ->
+                    ( Subst $ t1 `M.union` fmap (appSubst $ Subst t1) s1
+                    , Subst $ t2 `M.union` fmap (appSubst $ Subst t2) s2
+                    )
+            )
+            itpair
+            subs
+
+    -- 4) on the differences of the typing contexts:
+    --      apply the corresponding substitution
+    let locals1 = fmap (appSubst sub1) (locals tp1 \\ locals tp2)
+    let locals2 = fmap (appSubst sub2) (locals tp2 \\ locals tp1)
+
+    -- 5) produce the left-biased unified typing
+    let localsU = M.intersectionWith
+            (\_ t -> appSubst sub2 t)
+            (locals tp1) (locals tp2)
+    return $ Typing
+        (locals1 `M.union` locals2 `M.union` localsU)
+        (appSubst sub2 (case itype tp2 of TyFun _ b -> b))  -- quick hack

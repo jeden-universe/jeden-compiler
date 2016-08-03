@@ -3,7 +3,7 @@ module Phase3.Type (
     Type(..), TVar(..),
     typeVars,
     Subst(..),
-    idSubst, compSubst, appSubst,
+    idSubst, compSubst, appSubst, joinSubst,
     morphism, coproduct
 ) where
 
