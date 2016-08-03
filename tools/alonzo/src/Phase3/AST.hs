@@ -37,6 +37,9 @@ type Local      = String
 
 newtype Context = Context (Map Global (Position,Typing))
 
+-- TODO
+--   add location information
+--   tag bad typings to delay error reporting
 data Typing     = Typing {
     locals      :: Map Local Type,
     itype       :: Type

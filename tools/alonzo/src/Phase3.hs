@@ -24,6 +24,8 @@ import Text.PrettyPrint.HughesPJClass  ( Pretty(..), render )
 -- import Text.Show                    ( Show(..), ShowS, shows, showString )
 -- import Text.PrettyPrint.GenericPretty ( pretty )
 
+import Debug.Trace                  ( trace, traceM )
+
 import Prelude hiding ( null, lookup )
 -- ( ($), Int, Maybe(..), Num(..), String, (++), undefined )
 
@@ -81,12 +83,23 @@ buildContext (Globals globals) = do
                  . showString " has no associated definition.\n"
                  $ ""
 
+-- TODO  replace by this correct(?) algorithm
+-- 1) on the intersection:
+--   take coproducts
+--   gather all substitutions into a single coherent pair
+-- 2) on the differences:
+--   apply the corresponding substitution
+
+-- TODO add a constructor for /bad/ typings, to delay error reporting
+--   when comparing to the declaration
 unifyTypings :: Map Local Type -> Map Local Type -> Either String (Map Local Type)
 unifyTypings m1 m2 = do
+    -- the whole following if WRONG
     mu <- sequence $ M.intersectionWithKey
-        (\k s t -> case coproduct s t of
-            Just (_,st) -> Right $ appSubst st t
-            Nothing     -> Left
+        -- (\k s t -> case coproduct s t of
+        --     Just (sub1,_) -> Right $ appSubst sub1 s
+        --     Nothing     -> Left
+        (\k s t -> if s == t then Right t else Left
                 $ showString "Type error:\n"
                 . showString "  • Incompatible types for " . showString k . showChar '\n'
                 . showString "    :: " . pretty s . showChar '\n'
@@ -141,12 +154,20 @@ algoC (App f e) = do
     tp2 <- algoC e
     beta <- new
     -- TODO unify typings
-    case coproduct (TyFun (itype tp2) beta) (itype tp1) of
-        Just (sub1,sub2) ->
+    case coproduct (itype tp1) (TyFun (itype tp2) beta) of
+        Just (sub1,sub2) -> do
+            traceM $ showString "coproduct "
+                   . showParen True (pretty $ itype tp1) . showChar ' '
+                   . showParen True (pretty $ TyFun (itype tp2) beta) . showChar '\n'
+                   . shows sub1 . showChar '\n'
+                   . shows sub2 . showChar '\n'
+                   $ ""
             -- unify typings
-            case unifyTypings (locals tp1) (locals tp2) of
+            case unifyTypings
+                    (fmap (appSubst sub1) $ locals tp1)
+                    (fmap (appSubst sub2) $ locals tp2) of
                 Right locs  -> do
-                    let typ = appSubst sub2 (itype tp1)
+                    let typ = appSubst sub2 beta
                     return $ Typing locs typ
                 Left err ->
                     throwE err

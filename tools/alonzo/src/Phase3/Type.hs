@@ -34,7 +34,7 @@ typeVars (TyFun s t) = typeVars s `S.union` typeVars t
 
 {-| The type of type variable substitutions.
 -}
-newtype Subst = Subst (Map TVar Type)
+newtype Subst = Subst (Map TVar Type) deriving (Show)
 
 {-| Build the identity substitutions over the given set of variables.
 -}
