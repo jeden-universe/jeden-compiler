@@ -3,9 +3,9 @@ module Phase3 (
     phase3
 ) where
 
-import Phase2 as P2 hiding ( Type(..) )
+import Phase2 as P2 hiding ( Type(..), Globals(..) )
 import qualified Phase2 as P2
-import Phase3.AST as P3 hiding ( Globals(..) )
+import Phase3.AST as P3
 import Phase3.Type
 
 import Control.Monad                ( Monad(..) )
@@ -34,7 +34,7 @@ pretty :: Pretty a => a -> ShowS
 pretty = showString . render . pPrint
 
 
-phase3 :: Globals -> Either String Globals
+phase3 :: P2.Globals -> Either String P3.Globals
 -- check type definitions
 -- gather term declarations and type definitions in a Context
 -- type-check terms
@@ -43,10 +43,24 @@ phase3 globals = do
     checkTermDefs globals
     return globals
 
+{-| Validate type definitions. This operation checks that there are no
+loops (occurs check) and substitutes all type aliases
+to get a pointless type.
+-}
+-- TODO define a monad environment to handle instantiating types
+--   recycle the AlgoC monad !!!
+checkTypeDefs :: P2.Globals -> Either String Globals
+checkTypeDefs (P2.Globals globals) =
+    Globals $ sequence $ foldrWithKey (go globals) (Right empty) globals
+    where
+        go :: Map Global P2.Meaning
+           -> Global
+           -> P2.Meaning
+           -> Either String (Map Global P3.Meaning)
+           -> Either String (Map Global P3.Meaning)
+        go _ _ _ (Left err) = Left err
+        go glob2 sym (P2.MTypeDef typ pos) (Right glob3) =
 
-checkTypeDefs :: Globals -> Either String ()
-checkTypeDefs (Globals globals) =
-    Right ()
 
 checkTermDefs :: Globals -> Either String ()
 checkTermDefs (Globals globals) = do

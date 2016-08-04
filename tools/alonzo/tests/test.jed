@@ -2,7 +2,7 @@
 
 #module :Test where
     I :: a -> a ;
-    I := \x . x ;
+    I := \x. x ;
 
     K :: a -> b -> b ;
     K := \x y. y ;
@@ -10,13 +10,20 @@
     S :: (a -> b -> c) -> (a -> b) -> a -> c ;
     S := \x y z. x z (y z) ;
 
-    One ::= any -> any ;
+    One :: Type ;
+    One := any : Type
+        :- any -> any ;
 
     unit :: One ;
     unit := \x. x ;
 
-    elim1 :: out -> One -> out ;
+    elim1 :: out : Type
+          :- out -> One -> out ;
     elim1 := \x t. t x ;
 
     id :: One -> One ;
     id := \u. u unit ;
+
+    List :: Type -> Type ;
+    List := \a. r : Type
+         :- r -> (a -> r -> r) -> r ;

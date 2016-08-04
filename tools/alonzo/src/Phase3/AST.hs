@@ -24,7 +24,7 @@ data Type = TyVar String
 
 newtype Globals = Globals (Map Global Meaning) deriving (Show,Generic)
 
-data Meaning    = MTypeDef  Type Position
+data Meaning    = MTypeDef  Type Type Position  -- user def; resolved type
                 | MTermDecl Type Position
                 | MTermDef  Type Term Position
     deriving (Show,Generic)
