@@ -10,8 +10,9 @@ module Phase2 (
 
 
 import Phase1 (
-    Module(..), Statement(..), Type(..), Term(..), Symbol(..) )
-
+    Module(..), Statement(..),
+    Typing(..), CtxElem(..),
+    Type(..), Term(..), Symbol(..) )
 import Data.Map         ( Map, empty, lookup, insert, assocs )
 import GHC.Generics     ( Generic )
 import Text.PrettyPrint.GenericPretty ( Out(..) )
@@ -26,9 +27,8 @@ type Global     = String
 
 type Position   = (Int,Int)
 
-data Meaning    = MTypeDef  Type Position
-                | MTermDecl Type Position
-                | MTermDef  Type Term Position
+data Meaning    = MDecl Typing Position
+                | MBoth Typing Position Term Position
     deriving (Show,Generic)
 
 instance Out Globals
@@ -41,29 +41,25 @@ instance (Out k, Out a) => Out (Map k a) where
 -----
 
 {- | Phase 2 transformation.  Gather all symbols into a dictionary.
-Check that terms are both defined and declared.
+Check that defined terms are previously declared.
 -}
 phase2 :: Module -> Either String Globals
 phase2 (Module modName stmts) = go empty stmts
     where
         go :: Map Global Meaning -> [Statement] -> Either String Globals
 
-        go globals (TypeDef (Symbol (pos,ident)) typ : stmts) =
+        go globals (TermDecl (Symbol (pos,ident)) typing : stmts) =
             case lookup ident globals of
                 Nothing  ->
-                    go (insert ident (MTypeDef typ pos) globals) stmts
+                    go (insert ident (MDecl typing pos) globals) stmts
+                -- TODO Just
 
-        go globals (TermDecl (Symbol (pos,ident)) typ : stmts) =
+        go globals (TermDef (Symbol (pos2,ident)) term : stmts) =
             case lookup ident globals of
-                Nothing  ->
-                    go (insert ident (MTypeDef typ pos) globals) stmts
-
-        go globals (TermDef (Symbol (pos,ident)) trm : stmts) =
-            case lookup ident globals of
-                Just (MTypeDef typ _) ->
-                    go (insert ident (MTermDef typ trm pos) globals) stmts
+                Just (MDecl typing pos1) ->
+                    go (insert ident (MBoth typing pos1 term pos2) globals) stmts
                 Nothing ->
-                    Left $ shows pos . showString ":\n"
+                    Left $ shows pos2 . showString ":\n"
                          . showString "  Term defined but not declared\n"
                          $ ""
 
