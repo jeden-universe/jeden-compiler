@@ -5,26 +5,53 @@ comment "# " ;
 
 Module.     Module ::= "#module" ModName "where" [Statement] ;
 
-terminator  Statement ";" ;
+terminator  Statement     ";" ;
+TermDecl.   Statement ::= Symbol "::" Typing ;
+TermDef.    Statement ::= Symbol ":=" Term ;
 
-TypeDef.    Statement ::= Symbol "::=" Type ;
-TermDecl.   Statement ::= Symbol "::"  Type ;
-TermDef.    Statement ::= Symbol ":="  Term ;
+TypSim.     Typing    ::= Type ;
+TypCtx.     Typing    ::= [CtxElem] Type ;
 
-TyVar.      Type2     ::= Symbol ;
+Elem.       CtxElem   ::= Symbol ":" Type ;
+
+[].         [CtxElem] ::= ":-" ;
+(:[]).      [CtxElem] ::= CtxElem ":-" ;
+(:).        [CtxElem] ::= CtxElem "," [CtxElem] ;
+
+----- Types -----
+
 TyFun.      Type      ::= Type2 "->" Type ;
 _.          Type      ::= Type2 ;
-_.          Type2     ::= "(" Type ")" ;
 
-Var.        Term3     ::= Symbol ;
-App.        Term2     ::= Term2 Term3 ;
-_.          Term      ::= Term2 ;
-_.          Term2     ::= Term3 ;
-_.          Term3     ::= "(" Term ")" ;
+TyApp.      Type2     ::= Type3 Type2 ;
+_.          Type2     ::= Type3 ;
 
-Abs.        Term      ::= "\\" Symbol Term4 ;
-_.          Term4     ::= "." Term ;
-Abs.        Term4     ::= Symbol Term4 ;
+TyType.     Type3     ::= "Type" ;
+TyVar.      Type3     ::= Symbol ;
+_.          Type3     ::= "(" Type ")" ;
+TyQVar.     Type3     ::= "(" Symbol ":" Type ")" ;
+
+
+----- Terms ------
+
+Abs.        Term      ::= "\\" Symbol Term2 ;
+_.          Term      ::= Term3 ;
+
+_.          Term2     ::= "." Term ;
+Abs.        Term2     ::= Symbol Term2 ;
+
+Arr.        Term3     ::= Term4 "->" Term3 ;
+_.          Term3     ::= Term4 ;
+
+App.        Term4     ::= Term4 Term5 ;
+_.          Term4     ::= Term5 ;
+
+Var.        Term5     ::= Symbol ;
+_.          Term5     ::= "(" Term ")" ;
+QVar.       Term5     ::= "(" Symbol ":" Term ")" ;
+
+
+----- Tokens -----
 
 position token Symbol (letter (letter | digit | '_')* ) ;
 token ModName ':'(letter letter*) ;

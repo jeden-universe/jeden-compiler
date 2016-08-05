@@ -1,18 +1,20 @@
 # test file
 
 #module :Test where
-    I :: a -> a ;
+    I :: a : Type
+      :- a -> a ;
     I := \x. x ;
 
-    K :: a -> b -> b ;
+    K :: a : Type, b : Type
+      :- a -> b -> b ;
     K := \x y. y ;
 
-    S :: (a -> b -> c) -> (a -> b) -> a -> c ;
+    S :: a : Type, b : Type, c : Type
+      :- (a -> b -> c) -> (a -> b) -> a -> c ;
     S := \x y z. x z (y z) ;
 
-    One :: Type ;
-    One := any : Type
-        :- any -> any ;
+    One :: any : Type :- Type ;
+    One := any -> any ;
 
     unit :: One ;
     unit := \x. x ;
@@ -24,6 +26,19 @@
     id :: One -> One ;
     id := \u. u unit ;
 
-    List :: Type -> Type ;
-    List := \a. r : Type
-         :- r -> (a -> r -> r) -> r ;
+    # And now for dependent types
+    List :: r : Type :- Type -> Type ;
+    List := \a. r -> (a -> r -> r) -> r ;
+
+    Eq :: a : Type, C : a -> a -> Type
+       :- a -> a -> Type ;
+    Eq := \x y. ((z : a) -> C z z) -> C x y ;
+
+    refl :: (x : a) -> Eq x x ;
+    refl := \x. \f. f x ;
+
+    J :: a : Type,
+         x : a, y : a,
+         C : a -> a -> Type
+      :- ((z : a) -> C z z) -> Eq x y -> C x y ;
+    J := \f r. r f ;
