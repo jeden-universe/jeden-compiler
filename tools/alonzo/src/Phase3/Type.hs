@@ -4,7 +4,7 @@ module Phase3.Type (
     typeVars,
     Subst(..),
     idSubst, compSubst, appSubst, joinSubst,
-    morphism, coproduct
+    subtype, coproduct
 ) where
 
 import Phase3.AST       ( Type(..) )
@@ -70,22 +70,22 @@ joinSubst (Subst sub1) (Subst sub2) = do
     guard $ and $ intersectionWith (==) sub1 sub2
     return $ Subst (sub1 `M.union` sub2)
 
-{-| "More general than" binary relation between types. If the first type
-is indeed more general than the other, this function returns a type
+{-| Subtype binary relation between types. If the first type
+is more general than the other, this function returns a type
 variable substitution map as a witness of the relation.
 
-This relation defines a pre-ordering that may be denoted @<=@, since
+This relation defines a pre-order that may be denoted @<=@, since
 more general types look smaller. However, it cannot serve as a definition of
 a Haskell 'Ord' instance since that would require a total order. Two types may
 be non-comparable, i.e., neither is more general than the other.
 -}
-morphism :: Type -> Type -> Maybe Subst
-morphism (TyVar a) t = Just $ Subst $ M.singleton a t
-morphism (TyFun s1 t1) (TyFun s2 t2) = do
-    s12 <- morphism s1 s2
-    t12 <- morphism t1 t2
+subtype :: Type -> Type -> Maybe Subst
+subtype (TyVar a) t = Just $ Subst $ M.singleton a t
+subtype (TyFun s1 t1) (TyFun s2 t2) = do
+    s12 <- subtype s1 s2
+    t12 <- subtype t1 t2
     joinSubst s12 t12
-morphism _ _ = Nothing
+subtype _ _ = Nothing
 
 {-| The coproduct of two types @a@ and @b@ is the smallest type @u@ such that
 

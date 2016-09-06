@@ -3,7 +3,7 @@ module Phase3 (
     phase3
 ) where
 
-import Phase2 as P2 hiding ( Type(..), Globals(..) )
+import Phase2 as P2 hiding ( Typing(..), Type(..), Globals(..) )
 import qualified Phase2 as P2
 import Phase3.AST as P3
 import Phase3.Type
@@ -34,44 +34,65 @@ pretty :: Pretty a => a -> ShowS
 pretty = showString . render . pPrint
 
 
-phase3 :: P2.Globals -> Either String P3.Globals
--- check type definitions
--- gather term declarations and type definitions in a Context
--- type-check terms
-phase3 globals = do
-    checkTypeDefs globals
-    checkTermDefs globals
-    return globals
+phase3 :: Module -> Either String Globals
+phase3 (Module modName stmts) =
+    checkStatements (Globals empty) stmts
 
-{-| Validate type definitions. This operation checks that there are no
-loops (occurs check) and substitutes all type aliases
-to get a pointless type.
--}
--- TODO define a monad environment to handle instantiating types
---   recycle the AlgoC monad !!!
-checkTypeDefs :: P2.Globals -> Either String Globals
-checkTypeDefs (P2.Globals globals) =
-    Globals $ sequence $ foldrWithKey (go globals) (Right empty) globals
-    where
-        go :: Map Global P2.Meaning
-           -> Global
-           -> P2.Meaning
-           -> Either String (Map Global P3.Meaning)
-           -> Either String (Map Global P3.Meaning)
-        go _ _ _ (Left err) = Left err
-        go glob2 sym (P2.MTypeDef typ pos) (Right glob3) =
+checkStatements :: Globals -> [Statement] -> Either String Globals
+checkStatements globals [] = return globals
+checkStatements (Globals globals) (stmt : stmts) = do
+    checked <- checkStatement globals stmt
+    checkStatements
+        (Globals $ insert * checked globals)
+        stmts
+
+checkStatement :: Globals -> Statement -> Either String Globals
+checkStatement (Globals globals) (TermDecl sym dtyping) =
+    case lookup globals of
+        Just _ ->
+            Left "symbol already declared"
+        Nothing -> do
+            ityping <- inferKind globals (ityp dtyping)
+            -- reduce both before comparing?
+            case equivTyping ityping dtyping of
+                Just _ _ ->
+                    return $ Globals $ insert sym (MDecl dtyping pos)
+                Nothing ->
+                    Left "invalid typing"
+
+checkStatement (Globals globals) (TermDef sym trm) =
+    case lookup globals of
+        Just (MDecl typ dpos) -> do
+            Typing loc ityp <- inferType globals trm
+            let dtyp = type2to3 typ
+            case subtype ityp dtyp of
+                Just _  -> Right
+                    $ Globals $ insert sym (reduce globals trm)
+                Nothing -> Left
+                    $ shows pos . showString ":\n"
+                    . showString "  • Type mismatch in definition of " . showString ident . showChar '\n'
+                    . showString "      declared :: " . pretty dtyp . showChar '\n'
+                    . showString "      inferred :: " . pretty ityp . showChar '\n'
+                    $ ""
+        Just (MBoth _ _ _ dpos) ->
+            Left "symbol already defined"
+        Nothing ->
+            Left "symbol defined but not declared"
+
+reduce :: Globals -> Term -> Term
+reduce = undefined
 
 
-checkTermDefs :: Globals -> Either String ()
-checkTermDefs (Globals globals) = do
+checkTermDefs :: P2.Globals -> Either String ()
+checkTermDefs (P2.Globals globals) = do
     ctx <- buildContext (Globals globals)
     sequence_ $ map (check ctx) $ assocs globals
     where
-        check ctx (ident, P2.MTypeDef _ _) = Right ()
-        check ctx (ident, P2.MTermDef typ trm pos) = do
+        check ctx (ident, P2.MDecl _ _) = Right ()
+        check ctx (ident, P2.MBoth typ posd trm pos) = do
             Typing loc ityp <- runAlgoC ctx trm
-            let dtyp = type2to3 typ
-            case morphism ityp dtyp of
+            let dtyp = reduce ctx (type2to3 typ)
+            case subtype ityp dtyp of
                 Just _  -> Right ()
                 Nothing -> Left
                     $ shows pos . showString ":\n"
@@ -80,18 +101,15 @@ checkTermDefs (Globals globals) = do
                     . showString "      inferred :: " . pretty ityp . showChar '\n'
                     $ ""
 
-buildContext :: Globals -> Either String Context
-buildContext (Globals globals) = do
+buildContext :: P2.Globals -> Either String Context
+buildContext (P2.Globals globals) = do
     globals' <- sequence $ map convert $ toAscList globals
     return $ Context $ fromAscList globals'
     where
-        convert (ident, P2.MTypeDef typ pos) =
-            Right (ident, (pos,Typing empty TyType))
-
-        convert (ident, P2.MTermDef typ trm pos) =
+        convert (ident, P2.MBoth typ posd trm pos) =
             Right (ident, (pos,Typing empty (type2to3 typ)))
 
-        convert (ident, P2.MTermDecl typ pos) =
+        convert (ident, P2.MDecl typ pos) =
             Left $ shows pos . showString ":\n"
                  . showString "  Term declaration " . showString ident
                  . showString " has no associated definition.\n"
